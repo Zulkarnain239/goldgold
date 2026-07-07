@@ -24,12 +24,12 @@ import schedule
 # ─────────────────────────────────────────────
 # CONFIG — semua dari Environment Variables (set dalam Render.com dashboard)
 # ─────────────────────────────────────────────
-TELEGRAM_BOT_TOKEN = os.environ.get("8612217468:AAERSdXbHAl0YZ1skgVuFZ-wGbc4EkR_boY")
-TELEGRAM_CHAT_ID = os.environ.get("852325404")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-GROQ_API_KEY = os.environ.get("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")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
-TWELVEDATA_API_KEY = os.environ.get("0bc48a0fe324496e889d740e29e4ba43")  # free tier: twelvedata.com
+TWELVEDATA_API_KEY = os.environ.get("TWELVEDATA_API_KEY")  # free tier: twelvedata.com
 
 SYMBOL = "XAU/USD"
 CHECK_INTERVAL_MINUTES = 30
@@ -175,7 +175,7 @@ def parse_ai_json(text, source_name):
 
 def send_telegram_message(text):
     try:
-        url = f"https://api.telegram.org/bot{8612217468:AAERSdXbHAl0YZ1skgVuFZ-wGbc4EkR_boY}/sendMessage"
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         resp = requests.post(url, json={
             "chat_id": TELEGRAM_CHAT_ID,
             "text": text,
