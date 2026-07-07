@@ -118,12 +118,17 @@ HARGA SEMASA: {price_data['current_price']}
 ECONOMIC CALENDAR MINGGU INI (USD, High/Medium impact):
 {calendar_summary}
 
+Jika decision adalah BUY atau SELL, berikan juga entry price, stop loss (SL), dan take profit (TP) yang sesuai berdasarkan struktur harga/support-resistance dalam candle di atas. Guna risk-reward ratio minimum 1:1.5. Jika decision HOLD, set entry/sl/tp sebagai null.
+
 Berikan jawapan HANYA dalam format JSON tepat seperti ini, tiada teks lain:
 {{
   "decision": "BUY" atau "SELL" atau "HOLD",
   "confidence": <nombor 0-100>,
   "reason": "<penjelasan ringkas 1-2 ayat dalam Bahasa Melayu>",
-  "key_level": "<support/resistance penting yang perlu diperhatikan>"
+  "key_level": "<support/resistance penting yang perlu diperhatikan>",
+  "entry": <nombor harga entry, atau null jika HOLD>,
+  "sl": <nombor harga stop loss, atau null jika HOLD>,
+  "tp": <nombor harga take profit, atau null jika HOLD>
 }}"""
     return prompt
 
@@ -192,7 +197,8 @@ def format_notification(result, price_data):
         return "⚠️ *XAUUSD Signal Bot*\nGroq gagal respond. Check API key / logs."
 
     decision_emoji = {"BUY": "🟢", "SELL": "🔴", "HOLD": "⚪"}
-    emoji = decision_emoji.get(result.get("decision", "").upper(), "⚪")
+    decision = result.get("decision", "").upper()
+    emoji = decision_emoji.get(decision, "⚪")
 
     lines = [
         f"{emoji} *XAUUSD Signal — {result.get('decision', '?')}*",
@@ -204,6 +210,27 @@ def format_notification(result, price_data):
 
     if result.get("key_level"):
         lines.append(f"Key level: {result['key_level']}")
+
+    # SL/TP hanya relevan kalau decision BUY atau SELL, bukan HOLD
+    if decision in ("BUY", "SELL") and result.get("entry") is not None:
+        lines.append("")
+        lines.append("*Trade Levels:*")
+        lines.append(f"Entry: `{result.get('entry', '?')}`")
+        lines.append(f"SL: `{result.get('sl', '?')}`")
+        lines.append(f"TP: `{result.get('tp', '?')}`")
+
+        # Kira risk-reward ratio kalau semua nombor ada, untuk quick reference
+        try:
+            entry = float(result["entry"])
+            sl = float(result["sl"])
+            tp = float(result["tp"])
+            risk = abs(entry - sl)
+            reward = abs(tp - entry)
+            if risk > 0:
+                rr = round(reward / risk, 2)
+                lines.append(f"Risk:Reward ≈ 1:{rr}")
+        except (TypeError, ValueError, KeyError):
+            pass
 
     lines.append("")
     lines.append(f"🕐 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
