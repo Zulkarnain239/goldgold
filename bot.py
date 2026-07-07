@@ -25,7 +25,7 @@ import schedule
 # CONFIG — semua dari Environment Variables (set dalam Render.com dashboard)
 # ─────────────────────────────────────────────
 TELEGRAM_BOT_TOKEN = os.environ.get("8612217468:AAERSdXbHAl0YZ1skgVuFZ-wGbc4EkR_boY")
-TELEGRAM_CHAT_ID = os.environ.get("7513297859")
+TELEGRAM_CHAT_ID = os.environ.get("852325404")
 
 GROQ_API_KEY = os.environ.get("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")
 
