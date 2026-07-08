@@ -1,11 +1,12 @@
 """
-XAUUSD AI Signal Bot
+XAUUSD AI XAUUSD Bot
 =====================
 Fasa 1: Analysis-only bot.
 - Tarik data harga XAUUSD (TwelveData) + economic calendar (Forex Factory)
 - Hantar data ke Groq (Llama 3.3 70B) untuk analysis
 - Hantar notification result ke Telegram
-- Jalan setiap 30 minit (guna scheduler dalam script + keep-alive server untuk Render.com)
+- Jalan setiap 15 minit (guna scheduler dalam script + keep-alive server untuk Render.com)
+- Fokus SCALPING di timeframe M1, target 10-20 pips
 
 PENTING: Bot ini TIDAK execute trade. Kau yang buat keputusan buy/sell
 sendiri dalam MT5 berdasarkan signal yang dihantar.
@@ -32,7 +33,7 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 TWELVEDATA_API_KEY = os.environ.get("TWELVEDATA_API_KEY")  # free tier: twelvedata.com
 
 SYMBOL = "XAU/USD"
-CHECK_INTERVAL_MINUTES = 30
+CHECK_INTERVAL_MINUTES = 15
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,13 +47,13 @@ log = logging.getLogger("xauusd-bot")
 # ─────────────────────────────────────────────
 
 def get_price_data():
-    """Tarik harga terkini + candle data (H1) dari TwelveData."""
+    """Tarik harga terkini + candle data (M1) dari TwelveData - untuk scalping."""
     try:
         url = "https://api.twelvedata.com/time_series"
         params = {
             "symbol": SYMBOL,
-            "interval": "1h",
-            "outputsize": 20,
+            "interval": "1min",
+            "outputsize": 30,
             "apikey": TWELVEDATA_API_KEY
         }
         resp = requests.get(url, params=params, timeout=15)
@@ -67,7 +68,7 @@ def get_price_data():
 
         return {
             "current_price": float(latest["close"]),
-            "recent_candles": candles[:10],  # 10 candle terkini untuk context
+            "recent_candles": candles[:20],  # 20 candle M1 terkini untuk context scalping
         }
     except Exception as e:
         log.error(f"Error fetching price data: {e}")
@@ -75,16 +76,21 @@ def get_price_data():
 
 
 def get_economic_calendar():
-    """Tarik economic calendar dari Forex Factory (JSON feed, free)."""
+    """Tarik economic calendar dari Forex Factory (JSON feed, free).
+    Filter untuk HARI INI sahaja - relevan untuk scalping jangka pendek."""
     try:
         url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
         resp = requests.get(url, timeout=15)
         events = resp.json()
 
-        # Filter untuk USD & high/medium impact je (relevan untuk gold)
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        # Filter untuk USD & high/medium impact, dan tarikh hari ini sahaja
         relevant = [
             e for e in events
-            if e.get("country") == "USD" and e.get("impact") in ("High", "Medium")
+            if e.get("country") == "USD"
+            and e.get("impact") in ("High", "Medium")
+            and str(e.get("date", "")).startswith(today_str)
         ]
         return relevant[:8]  # limit supaya prompt tak terlalu panjang
     except Exception as e:
@@ -97,7 +103,7 @@ def get_economic_calendar():
 # ─────────────────────────────────────────────
 
 def build_prompt(price_data, calendar):
-    """Bina prompt untuk dihantar ke Groq."""
+    """Bina prompt untuk dihantar ke Groq - fokus scalping M1."""
     candles_summary = "\n".join([
         f"  {c['datetime']}: O={c['open']} H={c['high']} L={c['low']} C={c['close']}"
         for c in price_data["recent_candles"]
@@ -106,29 +112,38 @@ def build_prompt(price_data, calendar):
     calendar_summary = "\n".join([
         f"  {e.get('date', '')} {e.get('title', '')} (impact: {e.get('impact', '')})"
         for e in calendar
-    ]) or "  Tiada high/medium impact USD news dalam minggu ini."
+    ]) or "  Tiada high/medium impact USD news hari ini."
 
-    prompt = f"""Kau adalah analyst forex/gold berpengalaman. Analisa XAUUSD (Gold/USD) berdasarkan data berikut dan berikan cadangan trading.
+    prompt = f"""Kau adalah seorang SCALPER XAUUSD (Gold/USD) berpengalaman yang sedang aktif trading di timeframe M1 (1 minit) sekarang. Kau BUKAN swing/position trader - fokus kau adalah pergerakan harga jangka sangat pendek, dalam beberapa minit hingga sejam sahaja.
+
+OBJEKTIF: Cari peluang scalp dengan target keuntungan 10-20 pips SAHAJA (setara 1.0-2.0 pergerakan harga gold). Jangan cadangkan target yang lebih besar dari ini - kau bukan mencari swing besar, kau mencari pergerakan cepat dan tepat.
 
 HARGA SEMASA: {price_data['current_price']}
 
-10 CANDLE H1 TERKINI (dari terbaru ke lama):
+20 CANDLE M1 TERKINI (dari terbaru ke lama - ni pergerakan harga beberapa minit lepas, FOKUS UTAMA kau):
 {candles_summary}
 
-ECONOMIC CALENDAR MINGGU INI (USD, High/Medium impact):
+ECONOMIC CALENDAR HARI INI SAHAJA (USD, High/Medium impact):
 {calendar_summary}
 
-Jika decision adalah BUY atau SELL, berikan juga entry price, stop loss (SL), dan take profit (TP) yang sesuai berdasarkan struktur harga/support-resistance dalam candle di atas. Guna risk-reward ratio minimum 1:1.5. Jika decision HOLD, set entry/sl/tp sebagai null.
+ARAHAN ANALISA:
+1. Fokus HANYA pada price action candle M1 di atas - momentum, micro structure, order flow yang berlaku SEKARANG. Abaikan analisa jangka panjang atau bias makro yang tak relevan dengan minit-minit akan datang.
+2. Kalau ada news high-impact dalam beberapa jam akan datang hari ini, pertimbangkan risiko spike/whipsaw - mungkin cadangkan HOLD jika terlalu berisiko untuk scalp.
+3. Jika decision BUY atau SELL:
+   - SL mesti ketat (biasanya 8-15 pips sahaja, sesuai dengan gaya scalping)
+   - TP target 10-20 pips MAX dari entry - JANGAN lebih dari ini
+   - Guna risk-reward minimum 1:1.2 (scalping tak perlu RR setinggi swing trading)
+4. Jika market kelihatan choppy/sideways/tiada momentum jelas dalam candle M1, cadangkan HOLD - jangan paksa entry.
 
 Berikan jawapan HANYA dalam format JSON tepat seperti ini, tiada teks lain:
 {{
   "decision": "BUY" atau "SELL" atau "HOLD",
   "confidence": <nombor 0-100>,
-  "reason": "<penjelasan ringkas 1-2 ayat dalam Bahasa Melayu>",
-  "key_level": "<support/resistance penting yang perlu diperhatikan>",
+  "reason": "<penjelasan ringkas 1-2 ayat dalam Bahasa Melayu, fokus pada price action M1 semasa>",
+  "key_level": "<micro support/resistance terdekat dalam beberapa minit ni>",
   "entry": <nombor harga entry, atau null jika HOLD>,
-  "sl": <nombor harga stop loss, atau null jika HOLD>,
-  "tp": <nombor harga take profit, atau null jika HOLD>
+  "sl": <nombor harga stop loss (ketat, ~8-15 pips), atau null jika HOLD>,
+  "tp": <nombor harga take profit (10-20 pips MAX dari entry), atau null jika HOLD>
 }}"""
     return prompt
 
@@ -201,7 +216,7 @@ def format_notification(result, price_data):
     emoji = decision_emoji.get(decision, "⚪")
 
     lines = [
-        f"{emoji} *XAUUSD Signal — {result.get('decision', '?')}*",
+        f"{emoji} *XAUUSD Scalp Signal (M1) — {result.get('decision', '?')}*",
         f"Harga semasa: `{price_data['current_price']}`",
         f"Confidence: {result.get('confidence', '?')}%",
         "",
