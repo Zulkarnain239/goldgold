@@ -33,7 +33,7 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 TWELVEDATA_API_KEY = os.environ.get("TWELVEDATA_API_KEY")  # free tier: twelvedata.com
 
 SYMBOL = "XAU/USD"
-CHECK_INTERVAL_MINUTES = 10
+CHECK_INTERVAL_MINUTES = 5
 
 logging.basicConfig(
     level=logging.INFO,
