@@ -33,7 +33,7 @@ TWELVEDATA_API_KEY = os.environ.get("TWELVEDATA_API_KEY")  # free tier: twelveda
 
 SYMBOL = "XAU/USD"
 CHECK_INTERVAL_MINUTES = 2  # check kerap secara senyap; notification hanya hantar bila confidence tinggi
-CONFIDENCE_THRESHOLD = 80  # hanya notify Telegram bila confidence >= ni
+CONFIDENCE_THRESHOLD = 70  # hanya notify Telegram bila confidence >= ni
 
 logging.basicConfig(
     level=logging.INFO,
