@@ -1,12 +1,11 @@
 """
-XAUUSD AI XAUUSD Bot
+XAUUSD AI Signal Bot
 =====================
 Fasa 1: Analysis-only bot.
 - Tarik data harga XAUUSD (TwelveData) + economic calendar (Forex Factory)
 - Hantar data ke Groq (Llama 3.3 70B) untuk analysis
 - Hantar notification result ke Telegram
-- Jalan setiap 15 minit (guna scheduler dalam script + keep-alive server untuk Render.com)
-- Fokus SCALPING di timeframe M1, target 10-20 pips
+- Jalan setiap 30 minit (guna scheduler dalam script + keep-alive server untuk Render.com)
 
 PENTING: Bot ini TIDAK execute trade. Kau yang buat keputusan buy/sell
 sendiri dalam MT5 berdasarkan signal yang dihantar.
@@ -33,7 +32,8 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 TWELVEDATA_API_KEY = os.environ.get("TWELVEDATA_API_KEY")  # free tier: twelvedata.com
 
 SYMBOL = "XAU/USD"
-CHECK_INTERVAL_MINUTES = 10
+CHECK_INTERVAL_MINUTES = 2  # check kerap secara senyap; notification hanya hantar bila confidence tinggi
+CONFIDENCE_THRESHOLD = 80  # hanya notify Telegram bila confidence >= ni
 
 logging.basicConfig(
     level=logging.INFO,
@@ -263,7 +263,7 @@ def run_analysis():
 
     price_data = get_price_data()
     if price_data is None:
-        send_telegram_message("⚠️ *XAUUSD Signal Bot*\nGagal tarik data harga. Check TwelveData API key/limit.")
+        log.error("Gagal tarik data harga - skip check ini (senyap, tak spam Telegram tiap kali fail).")
         return
 
     calendar = get_economic_calendar()
@@ -272,10 +272,22 @@ def run_analysis():
     log.info("Calling Groq API...")
     result = call_groq(prompt)
 
-    message = format_notification(result, price_data)
+    if result is None:
+        log.error("Groq gagal respond - skip check ini.")
+        return
 
-    send_telegram_message(message)
-    log.info("Notification sent.")
+    decision = result.get("decision", "").upper()
+    confidence = result.get("confidence", 0)
+
+    log.info(f"Analysis: {decision} @ {confidence}% confidence (threshold: {CONFIDENCE_THRESHOLD}%)")
+
+    # Hanya notify Telegram bila signal KUAT (bukan HOLD, confidence >= threshold)
+    if decision in ("BUY", "SELL") and confidence >= CONFIDENCE_THRESHOLD:
+        message = format_notification(result, price_data)
+        send_telegram_message(message)
+        log.info(f"STRONG SIGNAL - Notification sent ({decision} @ {confidence}%).")
+    else:
+        log.info("Signal tidak cukup kuat / HOLD - notification di-skip (senyap).")
 
 
 # ─────────────────────────────────────────────
