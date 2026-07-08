@@ -169,6 +169,12 @@ def call_groq(prompt):
             timeout=30
         )
         data = resp.json()
+
+        if "choices" not in data:
+            # Log full response body supaya kita nampak sebab sebenar (rate limit, invalid model, auth, dll)
+            log.error(f"Groq API returned no 'choices'. Status: {resp.status_code}. Full response: {data}")
+            return None
+
         text = data["choices"][0]["message"]["content"]
         return parse_ai_json(text, "Groq (Llama 3.3)")
     except Exception as e:
