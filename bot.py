@@ -33,7 +33,7 @@ TWELVEDATA_API_KEY = os.environ.get("TWELVEDATA_API_KEY")  # free tier: twelveda
 
 SYMBOL = "XAU/USD"
 CHECK_INTERVAL_MINUTES = 2  # check kerap secara senyap; notification hanya hantar bila confidence tinggi
-CONFIDENCE_THRESHOLD = 70  # hanya notify Telegram bila confidence >= ni
+CONFIDENCE_THRESHOLD = 70  # hanya notify Telegram bila confidence >= ni (akurasi minimum)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -114,36 +114,40 @@ def build_prompt(price_data, calendar):
         for e in calendar
     ]) or "  Tiada high/medium impact USD news hari ini."
 
-    prompt = f"""Kau adalah seorang SCALPER XAUUSD (Gold/USD) berpengalaman yang sedang aktif trading di timeframe M1 (1 minit) sekarang. Kau BUKAN swing/position trader - fokus kau adalah pergerakan harga jangka sangat pendek, dalam beberapa minit hingga sejam sahaja.
+    prompt = f"""Kau adalah seorang SCALPER XAUUSD (Gold/USD) PROFESIONAL dan sangat berpengalaman, sedang aktif memerhati market di timeframe M1 (1 minit) sekarang. Kau BUKAN swing/position trader - kau hanya mencari SATU jenis peluang: pergerakan cepat dan tepat sebanyak TEPAT 10 PIPS.
 
-OBJEKTIF: Cari peluang scalp dengan target keuntungan 10-20 pips SAHAJA (setara 1.0-2.0 pergerakan harga gold). Jangan cadangkan target yang lebih besar dari ini - kau bukan mencari swing besar, kau mencari pergerakan cepat dan tepat.
+MISI KAU: Kau HANYA boleh cadangkan BUY/SELL jika kau benar-benar yakin (confidence >= 70%) harga akan bergerak sekurang-kurangnya 10 pips ke arah yang kau jangkakan, dalam masa terdekat (beberapa minit). TP MESTI tepat 10 pips dari entry - TIDAK KURANG, TIDAK LEBIH. Jangan cadangkan target yang lebih kecil (contoh 5 pips) atau lebih besar (contoh 15-20 pips) - fokus hanya pada 10 pips yang konsisten dan boleh diulang.
+
+STANDARD KAU TINGGI - kau bukan sekadar meneka:
+- Kau hanya bagi signal BUY/SELL bila ada bukti KUAT dari price action - contoh: momentum jelas, breakout dari micro-range, rejection dari level penting, atau continuation pattern yang jelas dalam candle M1.
+- Kalau market choppy, tiada arah jelas, atau kau tak yakin harga boleh capai 10 pips dengan bersih (tanpa banyak halangan/resistance/support di antara), WAJIB bagi HOLD. Lebih baik tiada signal daripada signal lemah.
+- Fikirkan macam trader sebenar yang duit sendiri - kau tak nak kena stop loss sebab tergesa-gesa masuk trade yang tak meyakinkan.
 
 HARGA SEMASA: {price_data['current_price']}
 
-20 CANDLE M1 TERKINI (dari terbaru ke lama - ni pergerakan harga beberapa minit lepas, FOKUS UTAMA kau):
+20 CANDLE M1 TERKINI (dari terbaru ke lama - FOKUS UTAMA kau untuk baca momentum/order flow semasa):
 {candles_summary}
 
 ECONOMIC CALENDAR HARI INI SAHAJA (USD, High/Medium impact):
 {calendar_summary}
 
 ARAHAN ANALISA:
-1. Fokus HANYA pada price action candle M1 di atas - momentum, micro structure, order flow yang berlaku SEKARANG. Abaikan analisa jangka panjang atau bias makro yang tak relevan dengan minit-minit akan datang.
-2. Kalau ada news high-impact dalam beberapa jam akan datang hari ini, pertimbangkan risiko spike/whipsaw - mungkin cadangkan HOLD jika terlalu berisiko untuk scalp.
-3. Jika decision BUY atau SELL:
-   - SL mesti ketat (biasanya 8-15 pips sahaja, sesuai dengan gaya scalping)
-   - TP target 10-20 pips MAX dari entry - JANGAN lebih dari ini
-   - Guna risk-reward minimum 1:1.2 (scalping tak perlu RR setinggi swing trading)
-4. Jika market kelihatan choppy/sideways/tiada momentum jelas dalam candle M1, cadangkan HOLD - jangan paksa entry.
+1. Fokus HANYA pada price action candle M1 di atas - momentum, micro structure, order flow SEKARANG. Abaikan analisa jangka panjang.
+2. Kalau ada news high-impact dalam beberapa jam akan datang hari ini, pertimbangkan risiko spike/whipsaw - HOLD jika terlalu berisiko.
+3. Jika (dan HANYA jika) kau yakin >= 70% harga akan bergerak bersih 10 pips ke arah BUY atau SELL:
+   - TP = entry ± 10 pips (TEPAT, bulatkan kepada harga gold yang sesuai, contoh 1.00 pergerakan harga = 10 pips)
+   - SL logik berdasarkan struktur terdekat (biasanya 6-10 pips, risk-reward minimum 1:1)
+4. Jika ragu-ragu langsung, WAJIB HOLD - jangan paksa cari alasan untuk masuk trade.
 
 Berikan jawapan HANYA dalam format JSON tepat seperti ini, tiada teks lain:
 {{
   "decision": "BUY" atau "SELL" atau "HOLD",
-  "confidence": <nombor 0-100>,
-  "reason": "<penjelasan ringkas 1-2 ayat dalam Bahasa Melayu, fokus pada price action M1 semasa>",
+  "confidence": <nombor 0-100, jujur berdasarkan keyakinan sebenar>,
+  "reason": "<penjelasan ringkas 1-2 ayat dalam Bahasa Melayu, fokus pada bukti price action M1 semasa>",
   "key_level": "<micro support/resistance terdekat dalam beberapa minit ni>",
   "entry": <nombor harga entry, atau null jika HOLD>,
-  "sl": <nombor harga stop loss (ketat, ~8-15 pips), atau null jika HOLD>,
-  "tp": <nombor harga take profit (10-20 pips MAX dari entry), atau null jika HOLD>
+  "sl": <nombor harga stop loss (~6-10 pips), atau null jika HOLD>,
+  "tp": <nombor harga take profit (TEPAT 10 pips dari entry), atau null jika HOLD>
 }}"""
     return prompt
 
@@ -216,7 +220,7 @@ def format_notification(result, price_data):
     emoji = decision_emoji.get(decision, "⚪")
 
     lines = [
-        f"{emoji} *XAUUSD Scalp Signal (M1) — {result.get('decision', '?')}*",
+        f"{emoji} *XAUUSD 10-Pip Scalp Signal (M1) — {result.get('decision', '?')}*",
         f"Harga semasa: `{price_data['current_price']}`",
         f"Confidence: {result.get('confidence', '?')}%",
         "",
