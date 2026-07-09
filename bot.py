@@ -1,9 +1,9 @@
 """
-XAUUSD AI Signal Bot - Multi-Timeframe Scalp Edition (Enhanced v6.1)
+XAUUSD AI Signal Bot - Multi-Timeframe Scalp Edition (Enhanced v6.2)
 ====================================================================
 Penambahbaikan:
-- Komen signal_candle_datetime dibetulkan (candle semasa, bukan selepas entry).
-- Migrasi DB: tambah kolum baru tanpa memusnahkan data sedia ada.
+- trend_bias() dibuang syarat HH/HL, hanya guna EMA + slope.
+- M5 dan M15 diambil terus dari TwelveData (bukan agregasi) untuk ketepatan sejajar broker.
 """
 
 import os
@@ -40,6 +40,8 @@ DEFAULT_SL_PIPS = 8
 
 M1_OUTPUTSIZE = 900
 H1_OUTPUTSIZE = 80
+M5_OUTPUTSIZE = 300   # cukup untuk 25 jam
+M15_OUTPUTSIZE = 150  # cukup untuk 37.5 jam
 
 EMA_TREND_PERIOD = 50
 EMA_SLOPE_LOOKBACK = 3
@@ -133,7 +135,6 @@ def init_db():
         ''')
 
         # ─── MIGRATIONS: Add new columns if they don't exist ───
-        # For signals table
         if not column_exists(conn, 'signals', 'signal_candle_datetime'):
             conn.execute('ALTER TABLE signals ADD COLUMN signal_candle_datetime TEXT')
             log.info("Migration: Added column signal_candle_datetime to signals table.")
@@ -423,6 +424,7 @@ def get_h1_trend_data():
 def _parse_dt(dt_str):
     return datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
 
+# aggregate_candles masih dikekalkan untuk tujuan lain jika perlu, tetapi tidak digunakan untuk M5/M15
 def aggregate_candles(m1_candles, group_size):
     if not m1_candles:
         return []
@@ -566,8 +568,17 @@ def adx_latest(candles, period=14):
         adx = (adx * (period - 1) + dx) / period
     return round(adx, 1)
 
+# ─── trend_bias (MODIFIED: removed HH/HL conditions) ───
 def trend_bias(candles, fast=10, slow=20, trend_ma=EMA_TREND_PERIOD,
                slope_lookback=EMA_SLOPE_LOOKBACK, min_atr=None, atr_period=14):
+    """
+    Tentukan arah trend berdasarkan:
+      - EMA fast > EMA slow (bullish) atau < (bearish)
+      - Harga > EMA trend (bullish) atau < (bearish)
+      - Slope EMA slow (naik/turun)
+      - ATR minimum (jika diberikan)
+    HH/HL telah dibuang kerana terlalu ketat.
+    """
     closes = [c["close"] for c in candles]
     min_len = max(slow, trend_ma) + slope_lookback
     if len(closes) < min_len:
@@ -590,26 +601,11 @@ def trend_bias(candles, fast=10, slow=20, trend_ma=EMA_TREND_PERIOD,
         if atr is None or atr < min_atr:
             return "NEUTRAL"
 
-    # Higher High/Lower Low: 3 daripada 5 candle terakhir
-    if len(candles) >= 6:
-        highs = [c['high'] for c in candles[-6:]]
-        lows = [c['low'] for c in candles[-6:]]
-        higher_high_count = sum(1 for i in range(1, len(highs)) if highs[i] > highs[i-1])
-        higher_low_count = sum(1 for i in range(1, len(lows)) if lows[i] > lows[i-1])
-        bullish_hl = (higher_high_count >= 3 and higher_low_count >= 3)
-
-        lower_high_count = sum(1 for i in range(1, len(highs)) if highs[i] < highs[i-1])
-        lower_low_count = sum(1 for i in range(1, len(lows)) if lows[i] < lows[i-1])
-        bearish_hl = (lower_high_count >= 3 and lower_low_count >= 3)
-    else:
-        bullish_hl = bearish_hl = False
-
-    is_bullish = (ema_fast_now > ema_slow_now and price > ema_trend_now and ema_slow_slope > 0 and bullish_hl)
-    is_bearish = (ema_fast_now < ema_slow_now and price < ema_trend_now and ema_slow_slope < 0 and bearish_hl)
-
-    if is_bullish:
+    # Bullish conditions
+    if ema_fast_now > ema_slow_now and price > ema_trend_now and ema_slow_slope > 0:
         return "BULLISH"
-    elif is_bearish:
+    # Bearish conditions
+    if ema_fast_now < ema_slow_now and price < ema_trend_now and ema_slow_slope < 0:
         return "BEARISH"
     return "NEUTRAL"
 
@@ -1254,7 +1250,7 @@ def adjust_threshold():
         log.info(f"Auto-learning: best winrate {best_winrate:.2f} at bucket {best_bucket}, threshold set to {new_threshold}")
 
 # ─────────────────────────────────────────────
-# MAIN ANALYSIS JOB
+# MAIN ANALYSIS JOB (MODIFIED: use fetch_candles for M5/M15)
 # ─────────────────────────────────────────────
 
 def run_analysis():
@@ -1270,6 +1266,16 @@ def run_analysis():
     m1_candles = fetch_candles("1min", M1_OUTPUTSIZE)
     if not m1_candles or len(m1_candles) < 60:
         log.error("Data M1 tidak cukup - skip.")
+        return
+
+    # ─── FETCH M5 AND M15 DIRECTLY ───
+    m5_candles = fetch_candles("5min", M5_OUTPUTSIZE)
+    if not m5_candles or len(m5_candles) < 30:
+        log.error("Data M5 tidak cukup - skip.")
+        return
+    m15_candles = fetch_candles("15min", M15_OUTPUTSIZE)
+    if not m15_candles or len(m15_candles) < 20:
+        log.error("Data M15 tidak cukup - skip.")
         return
 
     current_price = m1_candles[-1]["close"]
@@ -1291,13 +1297,12 @@ def run_analysis():
         last_direction = None
         last_trend_summary = {}
 
-    m5_candles = aggregate_candles(m1_candles, 5)
-    m15_candles = aggregate_candles(m1_candles, 15)
+    # Trend check using fetched M5 and M15
     h1_candles = get_h1_trend_data()
-
     h1_dir = trend_bias(h1_candles, min_atr=MIN_ATR_H1) if h1_candles else "NEUTRAL"
     m15_dir = trend_bias(m15_candles, min_atr=MIN_ATR_M15)
     m5_dir = trend_bias(m5_candles, min_atr=MIN_ATR_M5)
+
     log.info(f"Trend: H1={h1_dir}, M15={m15_dir}, M5={m5_dir}")
     aligned_bullish = h1_dir == "BULLISH" and m15_dir == "BULLISH" and m5_dir == "BULLISH"
     aligned_bearish = h1_dir == "BEARISH" and m15_dir == "BEARISH" and m5_dir == "BEARISH"
@@ -1418,7 +1423,6 @@ def run_analysis():
     result["entry_condition"] = entry_condition
 
     # signal_candle_datetime is the datetime of the candle that contains the entry price.
-    # This is the most recent candle (m1_candles[-1]).
     signal_candle_dt = _parse_dt(m1_candles[-1]["datetime"])
 
     # Prepare entry_indicators for DB
