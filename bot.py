@@ -62,7 +62,7 @@ SYMBOL = "XAU/USD"
 
 # Check interval - 3 minit. Setiap run kini HANYA 1 TwelveData API call (M1 fetch;
 # H1 dah dibuang terus jadi tiada lagi fetch berasingan). Pada 3 minit = ~480
-# call/hari, bawah had 800/hari free tier - ada ruang kalau nak pendekkan
+# call/hari, jauh bawah had 800/hari free tier - ada ruang kalau nak pendekkan
 # ke 2 minit (~720/hari) kalau kau nak reaksi lebih laju drpd momentum M1.
 CHECK_INTERVAL_MINUTES = 3
 CONFIDENCE_THRESHOLD = 75      # hanya notify bila confidence >= ni
@@ -98,12 +98,6 @@ MIN_ADX_M1 = 25                 # ADX14 M1 - bawah ni dianggap market mendatar (
 
 # --- Entry safety - had drift harga sebelum entry dianggap tak sah lagi ---
 MAX_ENTRY_DRIFT_PIPS = 3        # amaran dlm notifikasi jika harga dah bergerak > ni drpd entry asal
-
-# --- SESSION CONTROL (Telegram commands) ---
-# Default: sesi aktif supaya bot berfungsi serta-merta selepas deploy.
-# Gunakan /endsession untuk hentikan semua panggilan API (analisis dihentikan sepenuhnya).
-# Gunakan /startsession untuk sambung semula.
-session_active = True
 
 logging.basicConfig(
     level=logging.INFO,
@@ -586,12 +580,6 @@ def format_notification(result, trend_summary, indicators=None):
 # ─────────────────────────────────────────────
 
 def run_analysis():
-    # --- SESSION CHECK ---
-    if not session_active:
-        log.info("Session inactive, skipping analysis (gunakan /startsession untuk aktifkan semula).")
-        return
-    # --- END SESSION CHECK ---
-
     log.info("Running scheduled analysis...")
 
     m1_candles = fetch_candles("1min", M1_OUTPUTSIZE)
@@ -719,66 +707,7 @@ def run_analysis():
 
 
 # ─────────────────────────────────────────────
-# 6. TELEGRAM POLLING UNTUK KAWALAN SESI
-#    (/startsession & /endsession)
-# ─────────────────────────────────────────────
-
-def poll_telegram_commands():
-    """
-    Thread berasingan: pantau arahan dari chat Telegram.
-    /startsession  → aktifkan semula analisis (set session_active = True)
-    /endsession    → hentikan semua panggilan API (set session_active = False)
-    """
-    global session_active
-    last_update_id = 0
-    base_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
-
-    log.info("Telegram command listener started (polling setiap 5 saat).")
-    while True:
-        try:
-            url = f"{base_url}/getUpdates"
-            params = {"offset": last_update_id + 1, "timeout": 10, "allowed_updates": ["message"]}
-            resp = requests.get(url, params=params, timeout=20)
-            data = resp.json()
-
-            if not data.get("ok"):
-                log.error(f"getUpdates error: {data}")
-                time.sleep(5)
-                continue
-
-            for update in data.get("result", []):
-                update_id = update["update_id"]
-                last_update_id = update_id  # sentiasa kemaskini
-
-                msg = update.get("message")
-                if not msg:
-                    continue
-                text = msg.get("text", "").strip()
-                chat_id = msg.get("chat", {}).get("id")
-
-                if text.startswith("/startsession"):
-                    session_active = True
-                    log.info(f"Session diaktifkan oleh chat_id {chat_id}.")
-                    requests.post(f"{base_url}/sendMessage", json={
-                        "chat_id": chat_id,
-                        "text": "✅ Sesi analisis **AKTIF**. Bot akan mula hantar signal semula."
-                    }, timeout=10)
-                elif text.startswith("/endsession"):
-                    session_active = False
-                    log.info(f"Session dihentikan oleh chat_id {chat_id}.")
-                    requests.post(f"{base_url}/sendMessage", json={
-                        "chat_id": chat_id,
-                        "text": "⏸️ Sesi analisis **DIHENTIKAN**. Bot tidak akan buat sebarang panggilan API sehingga /startsession."
-                    }, timeout=10)
-                # abaikan mesej lain
-
-        except Exception as e:
-            log.error(f"Polling Telegram error: {e}")
-            time.sleep(10)
-
-
-# ─────────────────────────────────────────────
-# 7. KEEP-ALIVE SERVER (untuk Render.com free tier + UptimeRobot)
+# 6. KEEP-ALIVE SERVER (untuk Render.com free tier + UptimeRobot)
 # ─────────────────────────────────────────────
 
 app = Flask(__name__)
@@ -810,12 +739,7 @@ def run_scheduler():
 
 
 if __name__ == "__main__":
-    # Start Telegram polling untuk commands
-    polling_thread = Thread(target=poll_telegram_commands, daemon=True)
-    polling_thread.start()
-
     scheduler_thread = Thread(target=run_scheduler, daemon=True)
     scheduler_thread.start()
-
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
