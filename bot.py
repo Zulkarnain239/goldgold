@@ -94,7 +94,7 @@ MIN_TREND_SCORE = 11             # perlu M15 & M5 KEDUA-DUA sehala (9) + >=1 str
 
 # --- Momentum + volatiliti filter (Gate 1b, gate KERAS - sebelum panggil AI) ---
 MIN_ATR_M1_TRADE = 0.40         # ATR14 M1 (unit harga) - bawah ni, market terlalu senyap utk TP 10 pip
-MIN_ADX_M1 = 25                 # ADX14 M1 - bawah ni dianggap market mendatar (choppy), skip
+MIN_ADX_M1 = 15                 # ADX14 M1 - bawah ni dianggap market mendatar (choppy), skip
 
 # --- Entry safety - had drift harga sebelum entry dianggap tak sah lagi ---
 MAX_ENTRY_DRIFT_PIPS = 3        # amaran dlm notifikasi jika harga dah bergerak > ni drpd entry asal
