@@ -5,8 +5,7 @@ Fasa 1: Analysis-only bot.
 - Tarik data harga XAUUSD (TwelveData) + economic calendar (Forex Factory)
 - Hantar data ke Groq (Llama 3.3 70B) untuk analysis
 - Hantar notification result ke Telegram
-- Jalan setiap 15 minit (guna scheduler dalam script + keep-alive server untuk Render.com)
-- Fokus SCALPING di timeframe M1, target 10-20 pips
+- Jalan setiap 30 minit (guna scheduler dalam script + keep-alive server untuk Render.com)
 
 PENTING: Bot ini TIDAK execute trade. Kau yang buat keputusan buy/sell
 sendiri dalam MT5 berdasarkan signal yang dihantar.
@@ -33,7 +32,7 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 TWELVEDATA_API_KEY = os.environ.get("TWELVEDATA_API_KEY")  # free tier: twelvedata.com
 
 SYMBOL = "XAU/USD"
-CHECK_INTERVAL_MINUTES = 10
+CHECK_INTERVAL_MINUTES = 2  # check kerap secara senyap; notification hantar bila AI jumpa peluang jelas
 
 logging.basicConfig(
     level=logging.INFO,
@@ -114,36 +113,41 @@ def build_prompt(price_data, calendar):
         for e in calendar
     ]) or "  Tiada high/medium impact USD news hari ini."
 
-    prompt = f"""Kau adalah seorang SCALPER XAUUSD (Gold/USD) berpengalaman yang sedang aktif trading di timeframe M1 (1 minit) sekarang. Kau BUKAN swing/position trader - fokus kau adalah pergerakan harga jangka sangat pendek, dalam beberapa minit hingga sejam sahaja.
+    prompt = f"""Kau adalah seorang SCALPER XAUUSD (Gold/USD) berpengalaman, sedang aktif memerhati market di timeframe M1 (1 minit) sekarang. Kau mencari SATU jenis peluang sahaja: pergerakan pantas sebanyak TEPAT 10 PIPS - target ini KECIL dan SELALU berlaku dalam beberapa minit di market gold, ia bukan peluang rare yang jarang muncul.
 
-OBJEKTIF: Cari peluang scalp dengan target keuntungan 10-20 pips SAHAJA (setara 1.0-2.0 pergerakan harga gold). Jangan cadangkan target yang lebih besar dari ini - kau bukan mencari swing besar, kau mencari pergerakan cepat dan tepat.
+MINDSET PENTING: 10 pips adalah target kecil dan realistik - kau TIDAK perlu tunggu "perfect setup" atau pergerakan besar untuk capai ini. Kebanyakan micro-trend/momentum burst yang biasa berlaku dalam candle M1 sudah cukup untuk capai 10 pips. Jangan terlalu berhati-hati sampai terlepas peluang yang sebenarnya cukup baik - tapi jangan juga asal ada pergerakan kecil terus bagi signal tanpa asas yang jelas.
+
+CHECKLIST - bagi signal BUY/SELL jika SEKURANG-KURANGNYA 2 daripada 4 kriteria ini jelas kelihatan dalam 20 candle M1:
+1. **Momentum arah jelas** - 3-5 candle terakhir bergerak konsisten ke satu arah (higher highs/higher lows untuk BUY, lower highs/lower lows untuk SELL)
+2. **Breakout micro-range** - harga baru sahaja pecah keluar dari range kecil (consolidation) yang terbentuk dalam beberapa candle sebelum ni
+3. **Rejection jelas** - candle menunjukkan penolakan kuat (wick panjang) dari satu level, diikuti pergerakan ke arah bertentangan
+4. **Continuation pattern** - selepas pullback kecil, harga sambung semula arah trend asal dengan candle body yang kukuh
+
+Jika TIADA satu pun kriteria di atas kelihatan jelas (market benar-benar choppy/flat/tiada struktur), bagi HOLD.
+
+Jika ada news high-impact dalam beberapa jam akan datang hari ini yang boleh sebabkan spike/whipsaw tiba-tiba, pertimbangkan risiko ini - HOLD jika terlalu berisiko walaupun kriteria di atas dipenuhi.
 
 HARGA SEMASA: {price_data['current_price']}
 
-20 CANDLE M1 TERKINI (dari terbaru ke lama - ni pergerakan harga beberapa minit lepas, FOKUS UTAMA kau):
+20 CANDLE M1 TERKINI (dari terbaru ke lama - FOKUS UTAMA kau untuk baca momentum/order flow semasa):
 {candles_summary}
 
 ECONOMIC CALENDAR HARI INI SAHAJA (USD, High/Medium impact):
 {calendar_summary}
 
-ARAHAN ANALISA:
-1. Fokus HANYA pada price action candle M1 di atas - momentum, micro structure, order flow yang berlaku SEKARANG. Abaikan analisa jangka panjang atau bias makro yang tak relevan dengan minit-minit akan datang.
-2. Kalau ada news high-impact dalam beberapa jam akan datang hari ini, pertimbangkan risiko spike/whipsaw - mungkin cadangkan HOLD jika terlalu berisiko untuk scalp.
-3. Jika decision BUY atau SELL:
-   - SL mesti ketat (biasanya 8-15 pips sahaja, sesuai dengan gaya scalping)
-   - TP target 10-20 pips MAX dari entry - JANGAN lebih dari ini
-   - Guna risk-reward minimum 1:1.2 (scalping tak perlu RR setinggi swing trading)
-4. Jika market kelihatan choppy/sideways/tiada momentum jelas dalam candle M1, cadangkan HOLD - jangan paksa entry.
+Jika decision BUY atau SELL:
+- TP = entry ± 10 pips (TEPAT, contoh 1.00 pergerakan harga XAUUSD = 10 pips)
+- SL logik berdasarkan struktur candle terdekat (biasanya 6-10 pips)
 
 Berikan jawapan HANYA dalam format JSON tepat seperti ini, tiada teks lain:
 {{
   "decision": "BUY" atau "SELL" atau "HOLD",
-  "confidence": <nombor 0-100>,
-  "reason": "<penjelasan ringkas 1-2 ayat dalam Bahasa Melayu, fokus pada price action M1 semasa>",
+  "confidence": <nombor 0-100, sekadar rujukan>,
+  "reason": "<penjelasan ringkas 1-2 ayat dalam Bahasa Melayu - sebut kriteria checklist mana yang dipenuhi>",
   "key_level": "<micro support/resistance terdekat dalam beberapa minit ni>",
   "entry": <nombor harga entry, atau null jika HOLD>,
-  "sl": <nombor harga stop loss (ketat, ~8-15 pips), atau null jika HOLD>,
-  "tp": <nombor harga take profit (10-20 pips MAX dari entry), atau null jika HOLD>
+  "sl": <nombor harga stop loss (~6-10 pips), atau null jika HOLD>,
+  "tp": <nombor harga take profit (TEPAT 10 pips dari entry), atau null jika HOLD>
 }}"""
     return prompt
 
@@ -165,6 +169,12 @@ def call_groq(prompt):
             timeout=30
         )
         data = resp.json()
+
+        if "choices" not in data:
+            # Log full response body supaya kita nampak sebab sebenar (rate limit, invalid model, auth, dll)
+            log.error(f"Groq API returned no 'choices'. Status: {resp.status_code}. Full response: {data}")
+            return None
+
         text = data["choices"][0]["message"]["content"]
         return parse_ai_json(text, "Groq (Llama 3.3)")
     except Exception as e:
@@ -216,7 +226,7 @@ def format_notification(result, price_data):
     emoji = decision_emoji.get(decision, "⚪")
 
     lines = [
-        f"{emoji} *XAUUSD Scalp Signal (M1) — {result.get('decision', '?')}*",
+        f"{emoji} *XAUUSD 10-Pip Scalp Signal (M1) — {result.get('decision', '?')}*",
         f"Harga semasa: `{price_data['current_price']}`",
         f"Confidence: {result.get('confidence', '?')}%",
         "",
@@ -263,7 +273,7 @@ def run_analysis():
 
     price_data = get_price_data()
     if price_data is None:
-        send_telegram_message("⚠️ *XAUUSD Signal Bot*\nGagal tarik data harga. Check TwelveData API key/limit.")
+        log.error("Gagal tarik data harga - skip check ini (senyap, tak spam Telegram tiap kali fail).")
         return
 
     calendar = get_economic_calendar()
@@ -272,10 +282,23 @@ def run_analysis():
     log.info("Calling Groq API...")
     result = call_groq(prompt)
 
-    message = format_notification(result, price_data)
+    if result is None:
+        log.error("Groq gagal respond - skip check ini.")
+        return
 
-    send_telegram_message(message)
-    log.info("Notification sent.")
+    decision = result.get("decision", "").upper()
+    confidence = result.get("confidence", 0)
+
+    log.info(f"Analysis: {decision} @ {confidence}% confidence")
+
+    # Notify Telegram bila AI kenal pasti signal (bukan HOLD) - tiada gating confidence,
+    # kriteria kelayakan signal dikawal dalam prompt itu sendiri
+    if decision in ("BUY", "SELL"):
+        message = format_notification(result, price_data)
+        send_telegram_message(message)
+        log.info(f"SIGNAL DETECTED - Notification sent ({decision} @ {confidence}%).")
+    else:
+        log.info("HOLD - tiada peluang jelas, notification di-skip (senyap).")
 
 
 # ─────────────────────────────────────────────
