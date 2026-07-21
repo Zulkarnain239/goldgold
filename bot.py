@@ -68,8 +68,8 @@ CHECK_INTERVAL_MINUTES = 3
 CONFIDENCE_THRESHOLD = 75      # hanya notify bila confidence >= ni
 NEWS_BLACKOUT_MINUTES = 60     # HOLD jika High impact USD news dalam tempoh ni
 
-PIP_SIZE = 0.1                 # 1 pip = 0.10 pergerakan harga XAUUSD (10 pips = 1.00)
-TP_PIPS = 10                   # target tetap - TIDAK berubah
+PIP_SIZE = 1                 # 1 pip = 0.10 pergerakan harga XAUUSD (10 pips = 1.00)
+TP_PIPS = 50                   # target tetap - TIDAK berubah
 DEFAULT_SL_PIPS = 8            # fallback jika AI tak bagi sl_pips yang munasabah
 
 # TwelveData caj mengikut BILANGAN CALL, bukan saiz output - naikkan outputsize
